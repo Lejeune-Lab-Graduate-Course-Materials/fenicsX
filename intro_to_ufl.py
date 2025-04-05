@@ -5,7 +5,6 @@ from dolfinx.nls.petsc import NewtonSolver
 from mpi4py import MPI
 import ufl
 import numpy as np
-from utils import get_displacement_at_point 
 
 # -------------------------------
 # Define a mesh
