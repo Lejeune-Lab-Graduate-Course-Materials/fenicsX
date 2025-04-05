@@ -1,10 +1,6 @@
-import pyvista as pv
-from dolfinx import mesh, fem, log
-from dolfinx.fem.petsc import NonlinearProblem
-from dolfinx.nls.petsc import NewtonSolver
+from dolfinx import mesh, fem
 from mpi4py import MPI
 import ufl
-import numpy as np
 
 # -------------------------------
 # Define a mesh
