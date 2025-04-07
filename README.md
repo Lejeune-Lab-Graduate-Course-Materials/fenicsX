@@ -14,6 +14,7 @@ mamba create create -n fenicsx-env
 mamba activate fenicsx-env
 mamba install -c conda-forge fenics-dolfinx mpich pyvista
 pip install imageio
+pip install gmsh
 ```
 
 Note: this might take a couple of minutes. 
