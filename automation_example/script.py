@@ -17,7 +17,7 @@ amplitude = 1.0
 frequency = 10 * np.pi / 20
 n_points = 100
 outline_points = utils.generate_sine_distorted_rectangle(length, width, amplitude, frequency, n_points)
-mesh_name = "distorted_recangle.msh"
+mesh_name = "distorted_rectangle.msh"
 mesh_size = 0.05
 utils.generate_and_save_linear_mesh(outline_points, mesh_name, mesh_size, mesh_name)
 domain, cell_tags, facet_tags = gmshio.read_from_msh(mesh_name, comm=MPI.COMM_WORLD, gdim=2)

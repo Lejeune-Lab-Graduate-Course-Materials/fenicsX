@@ -33,7 +33,7 @@ source activate fenicsx-env
 # mamba create -n fenicsx-env -y
 # source activate fenicsx-env
 # mamba install -y -c conda-forge fenics-dolfinx mpich pyvista
-# pip install imageio gmsh
+# pip install imageio gmsh PyYAML
 
 # -------------------------------
 # Run the appropriate task input
