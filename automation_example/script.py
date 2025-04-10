@@ -25,7 +25,7 @@ domain, cell_tags, facet_tags = gmshio.read_from_msh(mesh_name, comm=MPI.COMM_WO
 # -------------------------------
 # Define function space for vector displacement
 # -------------------------------
-V = fem.functionspace(domain, ("Lagrange", 2, (domain.geometry.dim,)))
+V = fem.functionspace(domain, ("Lagrange", 1, (domain.geometry.dim,)))
 v = ufl.TestFunction(V)
 u = fem.Function(V, name="Displacement")
 
@@ -121,7 +121,7 @@ warped.set_active_vectors("u")
 actor = plotter.add_mesh(warped, show_edges=False, lighting=False, clim=[0, 10])
 
 
-Vs = fem.functionspace(domain, ("Lagrange", 2))
+Vs = fem.functionspace(domain, ("Lagrange", 1))
 magnitude = fem.Function(Vs)
 us = fem.Expression(ufl.sqrt(sum([u[i]**2 for i in range(len(u))])), 
                     Vs.element.interpolation_points())

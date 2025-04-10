@@ -301,7 +301,7 @@ def generate_and_save_linear_mesh(
 ):
     """
     Generate a 2D linear triangle mesh from a closed outline and save it to a .msh file
-    for loading in FEniCSx. Uses explicit line closure to avoid Gmsh curve loop bugs.
+    for loading in FEniCSx. Includes deterministic settings for reproducibility.
 
     Parameters
     ----------
@@ -325,8 +325,7 @@ def generate_and_save_linear_mesh(
 
     # Create gmsh points (skip duplicated last point when creating points)
     point_tags = []
-    for kk in range(len(outline_points) - 1):
-        x, y = outline_points[kk]
+    for x, y in outline_points[:-1]:
         pt_tag = gmsh.model.geo.addPoint(x, y, 0.0, mesh_size)
         point_tags.append(pt_tag)
 
@@ -353,20 +352,30 @@ def generate_and_save_linear_mesh(
     surface = gmsh.model.geo.addPlaneSurface([loop])
 
     gmsh.model.geo.synchronize()
-    
-    # Add physical groups (useful for subdomains/BCs in FEniCSx)
+
+    # Add physical groups
     gmsh.model.addPhysicalGroup(2, [surface])
     for tag in curve_tags:
         gmsh.model.addPhysicalGroup(1, [tag])
 
     gmsh.model.geo.synchronize()
 
-    # Mesh settings: linear mesh
+    # -------------------------------
+    # Reproducible meshing settings
+    # -------------------------------
+    gmsh.option.setNumber("General.Terminal", 0)  # Suppress console output
+    gmsh.option.setNumber("Mesh.RandomSeed", 11)  # Fixed seed for reproducibility
+    gmsh.option.setNumber("Mesh.Algorithm", 6)    # Frontal-Delaunay (robust and deterministic)
+    gmsh.option.setNumber("Mesh.CharacteristicLengthFromPoints", 1)
+    gmsh.option.setNumber("Mesh.CharacteristicLengthFromCurvature", 0)
+    gmsh.option.setNumber("Mesh.Optimize", 0)     # Disable automatic smoothing (could be non-deterministic)
+
+    # Mesh settings: linear elements
     gmsh.model.mesh.setOrder(1)
     gmsh.model.geo.synchronize()
     gmsh.model.mesh.generate(2)
 
-    # make sure 2D
+    # Ensure file format is Gmsh 2.2 for compatibility
     gmsh.option.setNumber("Mesh.MshFileVersion", 2.2)
 
     # Save mesh to file

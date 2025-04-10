@@ -17,7 +17,6 @@
 # Give job a name
 #$ -N fea_sims
 
-
 # -------------------------------
 # Load conda/mamba and activate environment
 # -------------------------------
