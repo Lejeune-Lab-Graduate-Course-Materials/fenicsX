@@ -242,7 +242,7 @@ ele_order_list = [1, 2]
 
 is_quad_element_list = [True, False]
 
-run_simulations = False
+run_simulations = True
 run_post_process = True
 
 if run_simulations:
