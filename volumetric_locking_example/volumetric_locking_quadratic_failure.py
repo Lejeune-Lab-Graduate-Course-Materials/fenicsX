@@ -56,7 +56,6 @@ def run_simulation(nx, ny, element_order, is_quad_element, output_fname, E, nu, 
     # Stress
     P = ufl.diff(psi, F)
 
-
     # -------------------------------
     # Mark locations where boundary conditions will be applied
     # -------------------------------
@@ -127,14 +126,15 @@ def run_simulation(nx, ny, element_order, is_quad_element, output_fname, E, nu, 
     # "Time" stepping loop to incrementally apply load
     # -------------------------------
     log.set_log_level(log.LogLevel.INFO)
-    T.value[1] = traction_val
-    num_its, converged = solver.solve(u)
-    assert converged
-    # save pvd file
-    u.x.scatter_forward()
-    # Directly write vector-valued displacement for visualization
-    u.name = "Displacement"
-    vtkfile.write_function(u, t=1)
+    for t in range(1, 201):
+        T.value[1] = traction_val / 200 * t
+        num_its, converged = solver.solve(u)
+        assert converged
+        # save pvd file
+        u.x.scatter_forward()
+        # Directly write vector-valued displacement for visualization
+        u.name = "Displacement"
+        vtkfile.write_function(u, t=t)
 
     return converged
 
@@ -205,15 +205,15 @@ def get_centerline_displacement_from_pvd(
     return displacements
 
 
-case = 1
+case = 4
 
-if case == 1:
+if case == 4:
     #  assigned simulation parameters
     E = 1e4
-    nu = 0.3
-    traction_val = -0.0001
+    nu = 0.499999
+    traction_val = -0.1
     H = 1.0
-    L = 100.0
+    L = 40.0
     #  computed analytical solution for comparison
     E_eff = E / (1 - nu**2)
     Izz = H ** 3 / 12
@@ -228,9 +228,9 @@ if case == 1:
         centerline_points.append((x[kk], y, z))
 
 
-ele_size_list = [[1, 100], [2, 200], [4, 400], [8, 800]]
+ele_size_list = [[1, 40], [2, 80], [4, 160], [8, 320], [16, 640]]
 
-ele_order_list = [1, 2]
+ele_order_list = [2]
 
 is_quad_element_list = [True, False]
 
@@ -265,8 +265,8 @@ if run_post_process:
     
     # centerlines plot
     ix = 0
-    title_list = ["Quad order 1 centerline", "Tri order 1 centerline", "Quad order 2 centerline", "Tri order 2 centerline"]
-    save_list = ["Quad_order_1_centerline", "Tri_order_1_centerline", "Quad_order_2_centerline", "Tri_order_2_centerline"]
+    title_list = ["Quad order 2 centerline", "Tri order 2 centerline"]
+    save_list = ["Quad_order_2_centerline", "Tri_order_2_centerline"]
     for element_order in ele_order_list:
         for is_quad_element in is_quad_element_list:
             title = title_list[ix]
@@ -287,8 +287,8 @@ if run_post_process:
 
     # comparison to w_analytical plot
     ix = 0
-    title_list = ["Quad order 1 tip", "Tri order 1 tip", "Quad order 2 tip", "Tri order 2 tip"]
-    save_list = ["Quad_order_1_tip", "Tri_order_1_tip", "Quad_order_2_tip", "Tri_order_2_tip"]
+    title_list = ["Quad order 2 tip", "Tri order 2 tip"]
+    save_list = ["Quad_order_2_tip", "Tri_order_2_tip"]
     for element_order in ele_order_list:
         for is_quad_element in is_quad_element_list:
             title = title_list[ix]
@@ -309,4 +309,3 @@ if run_post_process:
             fname = "case%i_" % (case) + save_list[ix]
             plt.savefig(fname)
             ix += 1
-            

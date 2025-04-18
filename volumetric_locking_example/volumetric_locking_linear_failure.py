@@ -56,7 +56,6 @@ def run_simulation(nx, ny, element_order, is_quad_element, output_fname, E, nu, 
     # Stress
     P = ufl.diff(psi, F)
 
-
     # -------------------------------
     # Mark locations where boundary conditions will be applied
     # -------------------------------
@@ -205,15 +204,15 @@ def get_centerline_displacement_from_pvd(
     return displacements
 
 
-case = 1
+case = 2
 
-if case == 1:
+if case == 2:
     #  assigned simulation parameters
     E = 1e4
-    nu = 0.3
-    traction_val = -0.0001
+    nu = 0.499999
+    traction_val = -0.001
     H = 1.0
-    L = 100.0
+    L = 40.0
     #  computed analytical solution for comparison
     E_eff = E / (1 - nu**2)
     Izz = H ** 3 / 12
@@ -228,7 +227,7 @@ if case == 1:
         centerline_points.append((x[kk], y, z))
 
 
-ele_size_list = [[1, 100], [2, 200], [4, 400], [8, 800]]
+ele_size_list = [[1, 40], [2, 80], [4, 160], [8, 320], [16, 640]]
 
 ele_order_list = [1, 2]
 

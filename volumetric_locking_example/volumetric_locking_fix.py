@@ -1,3 +1,5 @@
+import basix
+from basix.ufl import element, mixed_element
 from dolfinx import default_scalar_type, fem, log, mesh
 from dolfinx.nls.petsc import NewtonSolver
 from dolfinx.fem.petsc import NonlinearProblem
@@ -10,20 +12,13 @@ from typing import Optional, List, Tuple
 import ufl
 
 
-######################################################################################
-# simulation functions
-######################################################################################
-
-def run_simulation(nx, ny, element_order, is_quad_element, output_fname, E, nu, traction_val, H, L):
+def run_simulation_incompressible(nx, ny, output_fname, E, nu, traction_val, H, L):
     # -------------------------------
     # Define a mesh
     # -------------------------------
     lower_x, lower_y = 0.0, 0.0
     upper_x, upper_y = L, H
-    if is_quad_element:
-        select_cell_type = mesh.CellType.quadrilateral
-    else:
-        select_cell_type = mesh.CellType.triangle
+    select_cell_type = mesh.CellType.quadrilateral
     domain = mesh.create_rectangle(
         MPI.COMM_WORLD,
         [[lower_x, lower_y], [upper_x, upper_y]],
@@ -33,9 +28,25 @@ def run_simulation(nx, ny, element_order, is_quad_element, output_fname, E, nu, 
     # -------------------------------
     # Define a function space over the domain
     # -------------------------------
-    V = fem.functionspace(domain, ("Lagrange", element_order, (domain.geometry.dim,)))
-    v = ufl.TestFunction(V)
-    u = fem.Function(V, name="Displacement")
+    # Old: 
+    # V = fem.functionspace(domain, ("Lagrange", element_order, (domain.geometry.dim,)))
+    # v = ufl.TestFunction(V)
+    # u = fem.Function(V, name="Displacement")
+    # New:
+    # U2 and P1 as basix elements
+    U2 = element("Lagrange", domain.basix_cell(), 2, shape=(domain.geometry.dim,))  # For displacement -- vector
+    P1 = element("Lagrange", domain.basix_cell(), 1)  # For  pressure  -- scalar                                       
+    # combine to taylor-hood basix mixed_element
+    TH = mixed_element([U2, P1])      # Taylor-Hood style mixed element
+    # create appropriate function space
+    ME = fem.functionspace(domain, TH)    # Total space for all DOFs
+
+    # Define actual functions with the required DOFs
+    w = fem.Function(ME)
+    u, p = ufl.split(w)  # displacement u, pressure p
+
+    # Define test functions
+    u_test, p_test = ufl.TestFunctions(ME)
 
     # -------------------------------
     # Hyperelastic Constitutive Model
@@ -50,12 +61,16 @@ def run_simulation(nx, ny, element_order, is_quad_element, output_fname, E, nu, 
     C = F.T * F
     I1 = ufl.tr(C)
 
-    # Strain energy for compressible Neo-Hookean material
-    psi = (mu / 2) * (I1 - 3) - mu * ufl.ln(J) + (lmbda / 2) * ufl.ln(J)**2
+    # Strain energy for compressible Neo-Hookean material:
+    # psi = (mu / 2) * (I1 - 3) - mu * ufl.ln(J) + (lmbda / 2) * ufl.ln(J)**2
+    # Strain energy for incompressible Neo-Hookean material:
+    # alternative formulation designed to linearlize to small deformation solutions:
+    # psi = mu / 2.0 * (I1 - 3) - (mu + p) * ufl.ln(J) - 1.0 / (2.0 * lmbda) * p**2
+    # more standard formulation that is easier to explain:
+    psi = (mu / 2.0) * (I1 - 3.0) - p * (J - 1.0)
 
     # Stress
     P = ufl.diff(psi, F)
-
 
     # -------------------------------
     # Mark locations where boundary conditions will be applied
@@ -72,17 +87,21 @@ def run_simulation(nx, ny, element_order, is_quad_element, output_fname, E, nu, 
 
     marked_facets = np.hstack([left_facets, top_facets])
     marked_values = np.hstack([np.full_like(left_facets, 1),
-                            np.full_like(top_facets, 2)])
+                               np.full_like(top_facets, 2)])
     sorted_facets = np.argsort(marked_facets)
     facet_tag = mesh.meshtags(domain, fdim, marked_facets[sorted_facets],
-                            marked_values[sorted_facets])
+                              marked_values[sorted_facets])
 
     # -------------------------------
     # Dirichlet boundary conditions
     # -------------------------------
-    u_bc = np.array((0,) * domain.geometry.dim, dtype=default_scalar_type)
-    left_dofs = fem.locate_dofs_topological(V, facet_tag.dim, facet_tag.find(1))
-    bcs = [fem.dirichletbc(u_bc, left_dofs, V)]
+    left_dofs_u0 = fem.locate_dofs_topological(ME.sub(0).sub(0), facet_tag.dim, facet_tag.find(1))
+    left_dofs_u1 = fem.locate_dofs_topological(ME.sub(0).sub(1), facet_tag.dim, facet_tag.find(1))
+
+    bcs_left_u0 = fem.dirichletbc(0.0, left_dofs_u0, ME.sub(0).sub(0))
+    bcs_left_u1 = fem.dirichletbc(0.0, left_dofs_u1, ME.sub(0).sub(1))
+
+    bcs = [bcs_left_u0, bcs_left_u1]
 
     # -------------------------------
     # Define Body force + traction vectors for Neumann boundary conditions
@@ -94,25 +113,17 @@ def run_simulation(nx, ny, element_order, is_quad_element, output_fname, E, nu, 
     # -------------------------------
     # Weak form
     # -------------------------------
-    if is_quad_element:
-        if element_order == 2:
-            metadata = {"quadrature_degree": 9}
-        elif element_order == 1:
-            metadata = {"quadrature_degree": 4}
-    else:
-        if element_order == 2:
-            metadata = {"quadrature_degree": 4}
-        elif element_order == 1:
-            metadata = {"quadrature_degree": 1}
+    metadata = {"quadrature_degree": 9}
     ds = ufl.Measure("ds", domain=domain, subdomain_data=facet_tag,
                     metadata=metadata)
     dx = ufl.Measure("dx", domain=domain, metadata=metadata)
-    F_form = ufl.inner(ufl.grad(v), P) * dx - ufl.inner(v, B) * dx - ufl.inner(v, T) * ds(2)
-
+    F_form = ufl.inner(ufl.grad(u_test), P) * dx - ufl.inner(u_test, B) * dx - ufl.inner(u_test, T) * ds(2)
+    F_form += p_test * (J - 1) * dx
+    
     # -------------------------------
     # Solver details
     # -------------------------------
-    problem = NonlinearProblem(F_form, u, bcs)
+    problem = NonlinearProblem(F_form, w, bcs)
     solver = NewtonSolver(domain.comm, problem)
     solver.atol = 1e-8
     solver.rtol = 1e-8
@@ -127,21 +138,33 @@ def run_simulation(nx, ny, element_order, is_quad_element, output_fname, E, nu, 
     # "Time" stepping loop to incrementally apply load
     # -------------------------------
     log.set_log_level(log.LogLevel.INFO)
-    T.value[1] = traction_val
-    num_its, converged = solver.solve(u)
-    assert converged
-    # save pvd file
-    u.x.scatter_forward()
-    # Directly write vector-valued displacement for visualization
-    u.name = "Displacement"
-    vtkfile.write_function(u, t=1)
+    for t in range(1, 11):
+        T.value[1] = traction_val / 10 * t
+        num_its, converged = solver.solve(w)
+        assert converged
+
+        # Update ghost values before interpolation
+        w.x.scatter_forward()
+
+        # Define output spaces using ufl.element (no need for basix.ufl.element import)
+        V_out = fem.functionspace(domain, element("DG", domain.basix_cell(), 1, shape=(2,)))  # Displacement
+        Q_out = fem.functionspace(domain, element("DG", domain.basix_cell(), 1))              # Pressure
+
+        # Define output functions
+        u_out = fem.Function(V_out, name="Displacement")
+        p_out = fem.Function(Q_out, name="Pressure")
+
+        # Interpolate from mixed function subfields
+        u_out.interpolate(w.sub(0))
+        p_out.interpolate(w.sub(1))
+
+        # Write to file
+        vtkfile.write_function(u_out, t=t)
+        vtkfile.write_function(p_out, t=t)
 
     return converged
 
 
-######################################################################################
-# post-processing functions
-######################################################################################
 def get_centerline_displacement_from_pvd(
     pvd_path: str,
     centerline_points: List[Tuple[float, float, float]],
@@ -205,15 +228,15 @@ def get_centerline_displacement_from_pvd(
     return displacements
 
 
-case = 1
+case = 3
 
-if case == 1:
+if case == 3:
     #  assigned simulation parameters
     E = 1e4
-    nu = 0.3
-    traction_val = -0.0001
+    nu = 0.499999
+    traction_val = -0.1
     H = 1.0
-    L = 100.0
+    L = 40.0
     #  computed analytical solution for comparison
     E_eff = E / (1 - nu**2)
     Izz = H ** 3 / 12
@@ -228,11 +251,7 @@ if case == 1:
         centerline_points.append((x[kk], y, z))
 
 
-ele_size_list = [[1, 100], [2, 200], [4, 400], [8, 800]]
-
-ele_order_list = [1, 2]
-
-is_quad_element_list = [True, False]
+ele_size_list = [[1, 40], [2, 80], [4, 160], [8, 320], [16, 640]]
 
 run_simulations = True
 run_post_process = True
@@ -241,72 +260,61 @@ if run_simulations:
     for kk in range(0, len(ele_size_list)):
         ny = ele_size_list[kk][0]
         nx = ele_size_list[kk][1]
-        for element_order in ele_order_list:
-            for is_quad_element in is_quad_element_list:
-                output_fname = "case%i_nx%i_ny%i_eo%i_isquad%i.pvd" % (case, nx, ny, element_order, is_quad_element)
-                converged = run_simulation(nx, ny, element_order, is_quad_element, output_fname, E, nu, traction_val, H, L)
-                print("-----------------")
-                print(output_fname)
-                print("completed!")
+        output_fname = "case%i_nx%i_ny%i.pvd" % (case, nx, ny)
+        converged = run_simulation_incompressible(nx, ny, output_fname, E, nu, traction_val, H, L)
+        print("-----------------")
+        print(output_fname)
+        print("completed!")
 
 
 if run_post_process:
     all_centerlines = []
-    for element_order in ele_order_list:
-        for is_quad_element in is_quad_element_list:
-            centerline_list = []
-            for kk in range(0, len(ele_size_list)):
-                ny = ele_size_list[kk][0]
-                nx = ele_size_list[kk][1]
-                output_fname = "case%i_nx%i_ny%i_eo%i_isquad%i.pvd" % (case, nx, ny, element_order, is_quad_element)
-                centerline_disp = get_centerline_displacement_from_pvd(output_fname, centerline_points)
-                centerline_list.append(centerline_disp)
-            all_centerlines.append(centerline_list)
+    centerline_list = []
+    for kk in range(0, len(ele_size_list)):
+        ny = ele_size_list[kk][0]
+        nx = ele_size_list[kk][1]
+        output_fname = "case%i_nx%i_ny%i.pvd" % (case, nx, ny)
+        centerline_disp = get_centerline_displacement_from_pvd(output_fname, centerline_points)
+        centerline_list.append(centerline_disp)
+    all_centerlines.append(centerline_list)
     
     # centerlines plot
     ix = 0
-    title_list = ["Quad order 1 centerline", "Tri order 1 centerline", "Quad order 2 centerline", "Tri order 2 centerline"]
-    save_list = ["Quad_order_1_centerline", "Tri_order_1_centerline", "Quad_order_2_centerline", "Tri_order_2_centerline"]
-    for element_order in ele_order_list:
-        for is_quad_element in is_quad_element_list:
-            title = title_list[ix]
-            centerline_list = all_centerlines[ix]
-            plt.figure()
-            cp = np.asarray(centerline_points)
-            for kk in range(0, len(ele_size_list)):
-                cd = np.asarray(centerline_list[kk])
-                ny = ele_size_list[kk][0]
-                nx = ele_size_list[kk][1]
-                plt.plot(cp[:, 0] + cd[:, 0], cp[:, 1] + cd[:, 1], label="nx%i_ny%i" % (nx, ny))
-            
-            plt.legend()
-            plt.title(title)
-            fname = "case%i_" % (case) + save_list[ix]
-            plt.savefig(fname)
-            ix += 1
+    title_list = ["Quad D2P1 centerline"]
+    save_list = ["Quad_D2P1_centerline"]
+    title = title_list[ix]
+    centerline_list = all_centerlines[ix]
+    plt.figure()
+    cp = np.asarray(centerline_points)
+    for kk in range(0, len(ele_size_list)):
+        cd = np.asarray(centerline_list[kk])
+        ny = ele_size_list[kk][0]
+        nx = ele_size_list[kk][1]
+        plt.plot(cp[:, 0] + cd[:, 0], cp[:, 1] + cd[:, 1], label="nx%i_ny%i" % (nx, ny))
+    
+    plt.legend()
+    plt.title(title)
+    fname = "case%i_" % (case) + save_list[ix]
+    plt.savefig(fname)
+    ix += 1
 
     # comparison to w_analytical plot
     ix = 0
-    title_list = ["Quad order 1 tip", "Tri order 1 tip", "Quad order 2 tip", "Tri order 2 tip"]
-    save_list = ["Quad_order_1_tip", "Tri_order_1_tip", "Quad_order_2_tip", "Tri_order_2_tip"]
-    for element_order in ele_order_list:
-        for is_quad_element in is_quad_element_list:
-            title = title_list[ix]
-            centerline_list = all_centerlines[ix]
-            tip_list = []
-            num_ele_list = []
-            for kk in range(0, len(ele_size_list)):
-                tip_list.append(centerline_list[kk][-1][1])
-                if is_quad_element:
-                    num_ele_list.append(ele_size_list[kk][0] * ele_size_list[kk][1])
-                else:
-                    num_ele_list.append(ele_size_list[kk][0] * ele_size_list[kk][1] * 2)
-            plt.figure()
-            plt.plot(num_ele_list, tip_list, "k-", label="FEA solution")
-            plt.plot(num_ele_list, [w_analytical] * len(ele_size_list), "r--", label="analytical solution")
-            plt.title(title)
-            plt.legend()
-            fname = "case%i_" % (case) + save_list[ix]
-            plt.savefig(fname)
-            ix += 1
-            
+    title_list = ["Quad D2P1 tip"]
+    save_list = ["Quad_D2P1_tip"]
+    title = title_list[ix]
+    centerline_list = all_centerlines[ix]
+    tip_list = []
+    num_ele_list = []
+    for kk in range(0, len(ele_size_list)):
+        tip_list.append(centerline_list[kk][-1][1])
+        num_ele_list.append(ele_size_list[kk][0] * ele_size_list[kk][1])
+
+    plt.figure()
+    plt.plot(num_ele_list, tip_list, "k-", label="FEA solution")
+    plt.plot(num_ele_list, [w_analytical] * len(ele_size_list), "r--", label="analytical solution")
+    plt.title(title)
+    plt.legend()
+    fname = "case%i_" % (case) + save_list[ix]
+    plt.savefig(fname)
+    ix += 1
