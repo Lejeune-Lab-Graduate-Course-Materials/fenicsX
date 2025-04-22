@@ -52,7 +52,7 @@ def run_simulation_incompressible(nx, ny, output_fname, E, nu, traction_val, H, 
     # Hyperelastic Constitutive Model
     # -------------------------------
     mu = fem.Constant(domain, E / (2 * (1 + nu)))
-    lmbda = fem.Constant(domain, E * nu / ((1 + nu) * (1 - 2 * nu)))
+    # lmbda = fem.Constant(domain, E * nu / ((1 + nu) * (1 - 2 * nu)))
 
     d = domain.geometry.dim
     I = ufl.Identity(d)
@@ -233,7 +233,7 @@ case = 3
 if case == 3:
     #  assigned simulation parameters
     E = 1e4
-    nu = 0.499999
+    nu = 0.5
     traction_val = -0.1
     H = 1.0
     L = 40.0
@@ -277,7 +277,7 @@ if run_post_process:
         centerline_disp = get_centerline_displacement_from_pvd(output_fname, centerline_points)
         centerline_list.append(centerline_disp)
     all_centerlines.append(centerline_list)
-    
+
     # centerlines plot
     ix = 0
     title_list = ["Quad D2P1 centerline"]
@@ -291,7 +291,7 @@ if run_post_process:
         ny = ele_size_list[kk][0]
         nx = ele_size_list[kk][1]
         plt.plot(cp[:, 0] + cd[:, 0], cp[:, 1] + cd[:, 1], label="nx%i_ny%i" % (nx, ny))
-    
+
     plt.legend()
     plt.title(title)
     fname = "case%i_" % (case) + save_list[ix]
