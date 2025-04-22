@@ -309,3 +309,5 @@ if run_post_process:
             fname = "case%i_" % (case) + save_list[ix]
             plt.savefig(fname)
             ix += 1
+
+print("note long time to convergence")
