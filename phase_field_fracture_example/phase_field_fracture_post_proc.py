@@ -1,6 +1,5 @@
 import glob
 import pyvista as pv
-import imageio.v2 as imageio
 import os
 import matplotlib.pyplot as plt
 from collections import defaultdict
@@ -117,13 +116,6 @@ def plot_force_disp(filename_txt, output_png):
 
 
 if __name__ == "__main__":
-    # --- File paths ---
-    result_dir = "results"
-    force_txt = f"{result_dir}/reaction_bottom.txt"
-    force_plot = f"{result_dir}/force_disp.png"
-    field_xdmf = f"{result_dir}/phase_field.xdmf"
-    field_plot = f"{result_dir}/phase_field_tfinal.png"
-
     # --- Run post-processing ---
     generate_phase_field_gif(
             vtu_pattern="results/phase_field_*.vtu",

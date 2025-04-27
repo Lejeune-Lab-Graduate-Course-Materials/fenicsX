@@ -6,26 +6,17 @@ import ufl
 from mpi4py import MPI
 
 # FEniCSx core
-from dolfinx import mesh, fem, io, default_scalar_type
+from dolfinx import mesh, fem, default_scalar_type
 
 # PETSc backend (for solving systems)
-from dolfinx.fem.petsc import (
-    assemble_matrix,
-    assemble_vector,
-    apply_lifting,
-    set_bc,
-    create_matrix,
-    create_vector,
-)
-
+from dolfinx.fem.petsc import create_matrix, create_vector
 from petsc4py import PETSc
 
 # Required for post processing
 from dolfinx.io import VTKFile
 from pathlib import Path
 
-
-# Create a unit square domain with quadrilateral elements
+# --- Create a unit square domain with quadrilateral elements
 domain_size = 1.0
 mesh_resolution = 64
 domain = mesh.create_rectangle(
@@ -35,13 +26,13 @@ domain = mesh.create_rectangle(
     cell_type=mesh.CellType.quadrilateral                          # Use quadrilateral elements
 )
 
-# Create directory and file for output
+# --- Create directory and file for output
 output_dir = Path("./results")  # Customize the folder name
 output_dir.mkdir(parents=True, exist_ok=True)
 vtk_file_d = VTKFile(domain.comm, str(output_dir / "phase_field.pvd"), "w")
 vtk_file_u = VTKFile(domain.comm, str(output_dir / "displacement.pvd"), "w")
 
-# Function spaces
+# --- Create function spaces
 # V: scalar field for the phase field variable p
 # W: vector field for the displacement u
 # VV: discontinuous scalar field for the history field H
@@ -61,6 +52,7 @@ d_old = fem.Function(V)     # Phase field from previous iteration
 H_old = fem.Function(VV)    # History field storing maximum tensile energy
 H_init_ = fem.Function(V)   # Optional initial history field
 
+# --- Set up FEA problem -- capture theory via UFL
 # Material parameters (as UFL Constants so they can vary in space if needed)
 E = fem.Constant(domain, 1e3)        # Young's modulus
 nu = fem.Constant(domain, 0.3)       # Poisson's ratio
@@ -80,7 +72,6 @@ t = fem.Constant(domain, 0.0)
 
 if domain.comm.rank == 0:
     print("Setup complete. Mesh and function spaces initialized.")
-
 
 # --- Geometry dimensions ---
 tdim = domain.topology.dim  # Topological dimension of mesh (2D here)
@@ -163,27 +154,31 @@ if domain.comm.rank == 0:
 ds = ufl.Measure("ds", domain=domain, subdomain_data=facet_tag)
 dx = ufl.Measure("dx", domain=domain, metadata={"quadrature_degree": 2})
 
+
 # --- Strain and stress definitions ---
 def epsilon(u):
     """Small-strain tensor: symmetric gradient of displacement"""
     return ufl.sym(ufl.grad(u))
 
+
 def sigma(u):
     """Linear elastic stress tensor (Hooke's law for isotropic materials)"""
     return lmbda * ufl.tr(epsilon(u)) * ufl.Identity(2) + 2.0 * mu * epsilon(u)
+
 
 # --- Bracket functions for splitting tensile and compressive parts ---
 def bracket_pos(x):
     """Positive part of a scalar quantity"""
     return 0.5 * (x + np.abs(x))
 
+
 def bracket_neg(x):
     """Negative part of a scalar quantity"""
     return 0.5 * (x - np.abs(x))
 
-# --- Spectral decomposition of strain tensor ---
-# Used in Miehe model to separate tension and compression energy modes
 
+# --- Spectral decomposition of strain tensor ---
+# Used to separate tension and compression energy modes
 A = ufl.variable(epsilon(u_new))        # Strain tensor (symbolic variable for differentiation)
 I1 = ufl.tr(A)                           # First invariant (trace)
 delta = (A[0, 0] - A[1, 1])**2 + 4 * A[0, 1] * A[1, 0] + 3.0e-16**2  # Avoid zero sqrt
@@ -222,8 +217,8 @@ def H(u_new, H_old):
 
 # --- Define initial notch geometry ---
 # Horizontal notch 1/4 domain wide, starting at right edge, halfway up
-notch_start = np.array([domain_size, 0.5 * domain_size])                        # Right edge midpoint
-notch_end = np.array([domain_size - 0.25 * domain_size, 0.5 * domain_size])     # 1/4 width to the left
+notch_start = np.array([domain_size, 0.5 * domain_size])  # Right edge midpoint
+notch_end = np.array([domain_size - 0.25 * domain_size, 0.5 * domain_size])  # 1/4 width to the left
 
 
 # --- Distance from each mesh point to the notch segment ---
@@ -421,7 +416,6 @@ for i in range(num_steps + 1):
 
     if domain.comm.rank == 0:
         reaction_bot.append((float(t.value), total_R_bot))
-
 
 # --- Close files from saving process
 vtk_file_d.close()
