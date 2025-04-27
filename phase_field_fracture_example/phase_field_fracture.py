@@ -18,7 +18,7 @@ from pathlib import Path
 
 # --- Create a unit square domain with quadrilateral elements
 domain_size = 1.0
-mesh_resolution = 64
+mesh_resolution = 1000
 domain = mesh.create_rectangle(
     MPI.COMM_WORLD,
     [np.array([0.0, 0.0]), np.array([domain_size, domain_size])],  # Domain corners
